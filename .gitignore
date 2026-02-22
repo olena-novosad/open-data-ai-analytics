@@ -13,3 +13,6 @@ __pycache__/
 data/raw/
 *.csv
 *.zip
+
+.idea/
+*.iml

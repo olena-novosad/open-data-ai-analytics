@@ -45,17 +45,15 @@ jobs:
         id: visualization_step
         if: github.event.inputs.module == 'all' || github.event.inputs.module == 'visualization'
         shell: powershell
-        continue-on-error: true
         run: |
-          python -m jupyter nbconvert `
-            --to html `
-            --execute notebooks/visualization.ipynb `
-            --output visualization `
-            --output-dir artifacts/visualization `
-            1> artifacts/visualization/stdout.log `
-            2> artifacts/visualization/stderr.log
+          $ErrorActionPreference = 'Continue'
           
-          "exitcode=$LASTEXITCODE" >> $env:GITHUB_OUTPUT
+          python -m jupyter nbconvert --to html --execute notebooks/visualization.ipynb --output visualization --output-dir artifacts/visualization
+          
+          $lastCode = $LASTEXITCODE
+          echo "exitcode=$lastCode" >> $env:GITHUB_OUTPUT
+          
+          if ($lastCode -ne 0) { exit $lastCode }
 
       - name: Upload data_load artifacts
         if: always() && (github.event.inputs.module == 'all' || github.event.inputs.module == 'data_load')
@@ -71,20 +69,4 @@ jobs:
           name: artifacts-visualization-selfhosted
           path: artifacts/visualization
 
-      - name: Show visualization error log
-        if: always() && (github.event.inputs.module == 'all' || github.event.inputs.module == 'visualization')
-        shell: powershell
-        run: |
-          if (Test-Path artifacts/visualization/stderr.log) {
-            Write-Host "===== stderr.log ====="
-            Get-Content artifacts/visualization/stderr.log
-          }
-          
-          if (Test-Path artifacts/visualization/stdout.log) {
-            Write-Host "===== stdout.log ====="
-            Get-Content artifacts/visualization/stdout.log
-          }
-          
-          if ("${{ steps.visualization_step.outputs.exitcode }}" -ne "0") {
-            exit 1
-          }
+

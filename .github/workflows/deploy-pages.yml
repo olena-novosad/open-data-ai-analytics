@@ -1,0 +1,95 @@
+name: Deploy Results to GitHub Pages
+
+on:
+  workflow_run:
+    workflows: ["CI (modules)"]
+    types:
+      - completed
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+  actions: read
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download visualization artifact
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          workflow: ci.yml   # ⚠️ заміни якщо інша назва файлу
+          run_id: ${{ github.event.workflow_run.id }}
+          name: artifacts-visualization
+          path: artifacts/visualization
+
+      - name: Download data_research artifact
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          workflow: ci.yml
+          run_id: ${{ github.event.workflow_run.id }}
+          name: artifacts-data_research
+          path: artifacts/data_research
+
+      - name: Prepare site folder
+        run: |
+          mkdir -p _site
+
+          if [ -d artifacts ]; then cp -r artifacts _site/ || true; fi
+          if [ -d reports/figures ]; then cp -r reports/figures _site/figures || true; fi
+
+      - name: Create index.html
+        run: |
+          cat > _site/index.html <<'EOF'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Project Results</title>
+          </head>
+          <body>
+            <h1>Project Results</h1>
+            <p>Generated automatically from GitHub Actions.</p>
+
+            <h2>Reports</h2>
+            <ul>
+              <li>
+                <a href="./artifacts/visualization/visualization.html">
+                  Visualization Report
+                </a>
+              </li>
+              <li>
+                <a href="./artifacts/data_research/data_research.html">
+                  Data Research Report
+                </a>
+              </li>
+            </ul>
+
+            <h2>Figures</h2>
+            <ul>
+              <li><a href="./figures/">Open Figures Folder</a></li>
+            </ul>
+          </body>
+          </html>
+          EOF
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4

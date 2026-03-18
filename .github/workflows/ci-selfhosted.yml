@@ -45,12 +45,16 @@ jobs:
         if: github.event.inputs.module == 'all' || github.event.inputs.module == 'visualization'
         shell: powershell
         run: |
-          jupyter nbconvert `
+          python -m jupyter nbconvert `
             --to html `
             --execute notebooks/visualization.ipynb `
             --output visualization `
             --output-dir artifacts/visualization `
-            *> artifacts/visualization/run.log
+            2>&1 | Tee-Object -FilePath artifacts/visualization/run.log
+      
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
 
       - name: Upload data_load artifacts
         if: github.event.inputs.module == 'all' || github.event.inputs.module == 'data_load'

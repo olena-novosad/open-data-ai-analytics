@@ -1,0 +1,178 @@
+name: CI (modules)
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+    inputs:
+      module:
+        description: "Which module to run"
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - all
+          - data_load
+          - data_quality_analysis
+          - data_research
+          - visualization
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      data_load: ${{ steps.filter.outputs.data_load }}
+      data_quality_analysis: ${{ steps.filter.outputs.data_quality_analysis }}
+      data_research: ${{ steps.filter.outputs.data_research }}
+      visualization: ${{ steps.filter.outputs.visualization }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed files
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            data_load:
+              - 'src/data_load.py'
+              - 'requirements.txt'
+
+            data_quality_analysis:
+              - 'notebooks/data_quality_analysis.ipynb'
+              - 'src/data_load.py'
+              - 'requirements.txt'
+
+            data_research:
+              - 'notebooks/data_research.ipynb'
+              - 'src/data_load.py'
+              - 'requirements.txt'
+
+            visualization:
+              - 'notebooks/visualization.ipynb'
+              - 'src/data_load.py'
+              - 'requirements.txt'
+
+  run-modules:
+    needs: detect-changes
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - data_load
+          - data_quality_analysis
+          - data_research
+          - visualization
+
+    steps:
+      - name: Decide whether current module should run
+        id: selected
+        run: |
+          SELECTED="${{ github.event.inputs.module }}"
+          CURRENT="${{ matrix.module }}"
+          EVENT="${{ github.event_name }}"
+
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            if [ "$SELECTED" = "all" ] || [ "$SELECTED" = "$CURRENT" ]; then
+              echo "run=true" >> $GITHUB_OUTPUT
+            else
+              echo "run=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            case "$CURRENT" in
+              data_load)
+                CHANGED="${{ needs.detect-changes.outputs.data_load }}"
+                ;;
+              data_quality_analysis)
+                CHANGED="${{ needs.detect-changes.outputs.data_quality_analysis }}"
+                ;;
+              data_research)
+                CHANGED="${{ needs.detect-changes.outputs.data_research }}"
+                ;;
+              visualization)
+                CHANGED="${{ needs.detect-changes.outputs.visualization }}"
+                ;;
+            esac
+
+            if [ "$CHANGED" = "true" ]; then
+              echo "run=true" >> $GITHUB_OUTPUT
+            else
+              echo "run=false" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - name: Skip module
+        if: steps.selected.outputs.run != 'true'
+        run: echo "Skipping ${{ matrix.module }}"
+
+      - name: Checkout repository
+        if: steps.selected.outputs.run == 'true'
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        if: steps.selected.outputs.run == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        if: steps.selected.outputs.run == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Create artifacts directory
+        if: steps.selected.outputs.run == 'true'
+        run: mkdir -p artifacts/${{ matrix.module }}
+
+      - name: Run data_load module
+        if: steps.selected.outputs.run == 'true' && matrix.module == 'data_load'
+        run: |
+          cd src
+          python data_load.py > ../artifacts/data_load/run.log 2>&1
+
+      - name: Run data_quality_analysis notebook
+        if: steps.selected.outputs.run == 'true' && matrix.module == 'data_quality_analysis'
+        run: |
+          jupyter nbconvert \
+            --to html \
+            --execute notebooks/data_quality_analysis.ipynb \
+            --output data_quality_analysis \
+            --output-dir artifacts/data_quality_analysis \
+            > artifacts/data_quality_analysis/run.log 2>&1
+
+      - name: Run data_research notebook
+        if: steps.selected.outputs.run == 'true' && matrix.module == 'data_research'
+        run: |
+          jupyter nbconvert \
+            --to html \
+            --execute notebooks/data_research.ipynb \
+            --output data_research \
+            --output-dir artifacts/data_research \
+            > artifacts/data_research/run.log 2>&1
+
+      - name: Run visualization notebook
+        if: steps.selected.outputs.run == 'true' && matrix.module == 'visualization'
+        run: |
+          jupyter nbconvert \
+            --to html \
+            --execute notebooks/visualization.ipynb \
+            --output visualization \
+            --output-dir artifacts/visualization \
+            > artifacts/visualization/run.log 2>&1
+
+      - name: Upload artifacts
+        if: steps.selected.outputs.run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifacts-${{ matrix.module }}
+          path: artifacts/${{ matrix.module }}
+          if-no-files-found: error

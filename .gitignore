@@ -9,10 +9,6 @@ __pycache__/
 .venv/
 .env
 
-# Data (large files)
-data/raw/
-*.csv
-*.zip
 
 .idea/
 *.iml

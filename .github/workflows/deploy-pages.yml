@@ -1,4 +1,4 @@
-name: Deploy Results to GitHub Pages
+name: Deploy results to GitHub Pages
 
 on:
   workflow_run:
@@ -10,7 +10,6 @@ permissions:
   contents: read
   pages: write
   id-token: write
-  actions: read
 
 concurrency:
   group: "pages"
@@ -24,31 +23,52 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Download visualization artifact
-        uses: dawidd6/action-download-artifact@v6
-        with:
-          workflow: ci.yml   # ⚠️ заміни якщо інша назва файлу
-          run_id: ${{ github.event.workflow_run.id }}
-          name: artifacts-visualization
-          path: artifacts/visualization
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Download data_research artifact
-        uses: dawidd6/action-download-artifact@v6
-        with:
-          workflow: ci.yml
-          run_id: ${{ github.event.workflow_run.id }}
-          name: artifacts-data_research
-          path: artifacts/data_research
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
 
-      - name: Prepare site folder
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+
+          pip install jupyter nbconvert
+
+      - name: Build site
         run: |
           mkdir -p _site
 
-          if [ -d artifacts ]; then cp -r artifacts _site/ || true; fi
-          if [ -d reports/figures ]; then cp -r reports/figures _site/figures || true; fi
+          jupyter nbconvert \
+            --to html \
+            --execute notebooks/visualization.ipynb \
+            --output visualization.html \
+            --output-dir _site
 
-      - name: Create index.html
-        run: |
+          jupyter nbconvert \
+            --to html \
+            --execute notebooks/data_research.ipynb \
+            --output data_research.html \
+            --output-dir _site
+
+          if [ -d artifacts ]; then
+            cp -r artifacts _site/ || true
+          fi
+
+          if [ -d reports/figures ]; then
+            cp -r reports/figures _site/figures || true
+          fi
+
           cat > _site/index.html <<'EOF'
           <!DOCTYPE html>
           <html lang="en">
@@ -63,16 +83,8 @@ jobs:
 
             <h2>Reports</h2>
             <ul>
-              <li>
-                <a href="./artifacts/visualization/visualization.html">
-                  Visualization Report
-                </a>
-              </li>
-              <li>
-                <a href="./artifacts/data_research/data_research.html">
-                  Data Research Report
-                </a>
-              </li>
+              <li><a href="./visualization.html">Visualization Report</a></li>
+              <li><a href="./data_research.html">Data Research Report</a></li>
             </ul>
 
             <h2>Figures</h2>
@@ -83,13 +95,11 @@ jobs:
           </html>
           EOF
 
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: _site
 
       - name: Deploy to GitHub Pages
+        id: deployment
         uses: actions/deploy-pages@v4
